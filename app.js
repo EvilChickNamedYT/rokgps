@@ -12,6 +12,7 @@ const WAKE_WITH_TRAILING_TEXT_REGEX = /\bhey\s+(?:rok|rock|r[\s.-]*o[\s.-]*k)\b[
 const COMMAND_PATTERNS = [
   /give me destination for\s+(.+)/i,
   /destination for\s+(.+)/i,
+  /navigate(?: me)? to\s+(.+)/i,
   /navigate to\s+(.+)/i,
   /take me to\s+(.+)/i,
   /route(?: me)? to\s+(.+)/i,
