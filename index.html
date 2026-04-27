@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ROKGPS</title>
+  <meta
+    name="description"
+    content="ROKGPS is a voice-first navigation prototype that listens for 'hey rok' and maps the fastest route."
+  />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
+    rel="stylesheet"
+  />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-mark">ROK</div>
+      <div class="topbar-copy">
+        <p class="eyebrow">Voice-First Navigation</p>
+        <h1>ROKGPS</h1>
+      </div>
+    </header>
+
+    <main class="mobile-stack">
+      <section class="voice-panel">
+        <div id="listenerBanner" class="listener-banner" data-state="off" aria-live="polite">
+          <div class="listener-hero">
+            <div class="listener-orb-shell" aria-hidden="true">
+              <div class="listener-orb">
+                <span class="listener-orb-core"></span>
+              </div>
+            </div>
+
+            <div class="listener-copy">
+              <div class="listener-meta">
+                <span id="listenerModeText" class="mode-chip">OFF</span>
+                <span id="voiceModeBadge" class="voice-badge">Standby</span>
+              </div>
+              <h2 id="listenerHeadline">Microphone is off</h2>
+              <p id="listenerSubtext" class="listener-subtext">
+                Press Start Listening, then wait for the red pulse before you talk.
+              </p>
+              <p id="listenerHint" class="listener-hint">Wake word inactive</p>
+            </div>
+          </div>
+
+          <div class="action-row">
+            <button id="armVoiceBtn" class="primary-btn" type="button">Start Listening</button>
+            <button id="locateBtn" class="secondary-btn" type="button">Use My Location</button>
+          </div>
+        </div>
+
+        <div class="message-stack">
+          <section class="message-card">
+            <span class="message-label">Live Transcript</span>
+            <p id="liveTranscript" class="message-text">
+              Press Start Listening and wait for the red pulse before speaking.
+            </p>
+          </section>
+
+          <section class="message-card">
+            <span class="message-label">ROK Says</span>
+            <p id="assistantResponse" class="message-text">
+              Chrome or Edge on localhost gives the best wake-word and speech-to-text support.
+            </p>
+          </section>
+        </div>
+
+        <div class="status-row">
+          <article class="status-pill">
+            <span>Mic</span>
+            <strong id="micStatus">Idle</strong>
+          </article>
+          <article class="status-pill">
+            <span>Wake</span>
+            <strong id="wakeStatus">Disarmed</strong>
+          </article>
+          <article class="status-pill">
+            <span>Origin</span>
+            <strong id="originStatus">Waiting for location</strong>
+          </article>
+          <article class="status-pill">
+            <span>Destination</span>
+            <strong id="destinationStatus">Not set</strong>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel destination-panel">
+        <div class="section-head">
+          <p class="eyebrow">Destination</p>
+          <h2>Where do you want to go?</h2>
+          <p class="section-copy">Say it out loud or type it below.</p>
+        </div>
+
+        <form id="destinationForm" class="destination-form">
+          <label for="destinationInput">Destination</label>
+          <div class="input-row">
+            <input
+              id="destinationInput"
+              name="destination"
+              type="text"
+              autocomplete="off"
+              placeholder="Times Square, JFK Airport, Central Park..."
+            />
+            <button class="route-btn" type="submit">Route It</button>
+          </div>
+        </form>
+
+        <div class="preset-row" aria-label="Quick destinations">
+          <button class="preset-chip" type="button" data-destination="Times Square, New York City">Times Square</button>
+          <button class="preset-chip" type="button" data-destination="Grand Central Terminal, New York City">Grand Central</button>
+          <button class="preset-chip" type="button" data-destination="JFK Airport">JFK Airport</button>
+        </div>
+      </section>
+
+      <section class="panel map-panel">
+        <div class="section-head section-head-tight">
+          <div>
+            <p class="eyebrow">Route</p>
+            <h2>Fastest route</h2>
+          </div>
+          <p class="map-hint">Tap the map to set your start point.</p>
+        </div>
+
+        <div class="map-summary">
+          <article class="summary-card">
+            <span>Trip Time</span>
+            <strong id="tripTimeValue">--</strong>
+          </article>
+          <article class="summary-card">
+            <span>Distance</span>
+            <strong id="tripDistanceValue">--</strong>
+          </article>
+          <article class="summary-card">
+            <span>ETA</span>
+            <strong id="etaValue">--</strong>
+          </article>
+        </div>
+
+        <div id="map" class="map-canvas" aria-label="Map showing the route"></div>
+      </section>
+
+      <section class="panel directions-panel">
+        <div class="section-head">
+          <p class="eyebrow">Directions</p>
+          <h2>Turn by turn</h2>
+        </div>
+
+        <ol id="routeSteps" class="steps-list">
+          <li class="empty-step">Your directions will show up here after you ask ROKGPS for a destination.</li>
+        </ol>
+      </section>
+    </main>
+  </div>
+
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script src="app.js"></script>
+</body>
+</html>
