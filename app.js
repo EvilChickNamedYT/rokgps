@@ -4,6 +4,9 @@ const DEFAULT_VIEW = {
   zoom: 12,
 };
 
+const HOSTED_API_BASE = "https://rokgpsbackend.kyklos.online";
+const API_BASE = resolveApiBase();
+
 const WAKE_REGEX = /\bhey\s+(?:rok|rock|r[\s.-]*o[\s.-]*k)\b/i;
 const WAKE_WITH_TRAILING_TEXT_REGEX = /\bhey\s+(?:rok|rock|r[\s.-]*o[\s.-]*k)\b[\s,:-]*(.*)$/i;
 const COMMAND_PATTERNS = [
@@ -491,7 +494,7 @@ async function planRoute(destinationText) {
       origin_lon: String(origin.lon),
     });
 
-    const response = await fetch(`/api/route?${params.toString()}`);
+    const response = await fetch(`${API_BASE}/api/route?${params.toString()}`);
     const payload = await response.json();
 
     if (!response.ok) {
@@ -883,6 +886,20 @@ function truncateText(text, maxLength) {
     return clean;
   }
   return `${clean.slice(0, maxLength - 3)}...`;
+}
+
+function resolveApiBase() {
+  const override = typeof window !== "undefined" ? window.ROKGPS_API_BASE : "";
+  if (override && String(override).trim()) {
+    return String(override).trim().replace(/\/+$/, "");
+  }
+
+  const hostname = typeof window !== "undefined" ? window.location.hostname : "";
+  if (hostname === "127.0.0.1" || hostname === "localhost") {
+    return "";
+  }
+
+  return HOSTED_API_BASE;
 }
 
 function formatDistance(meters) {
