@@ -109,13 +109,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
 function initMap() {
   state.map = L.map("map", {
-    zoomControl: true,
+    zoomControl: false,
   }).setView([DEFAULT_VIEW.lat, DEFAULT_VIEW.lon], DEFAULT_VIEW.zoom);
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   }).addTo(state.map);
+  L.control.zoom({ position: "bottomright" }).addTo(state.map);
 
   state.map.on("click", (event) => {
     setOrigin(
@@ -205,7 +206,7 @@ function setupVoiceRecognition() {
     setVoiceMode("Speech unavailable");
     setVoicePresence("unsupported", {
       headline: "Voice input is unavailable here",
-      subtext: "This browser does not expose the speech recognition API. Use Chrome or Edge on localhost.",
+      subtext: 'This browser does not expose the speech recognition API. Use Chrome or Edge, then tap the R to arm "hey rock".',
       modeText: "UNAVAILABLE",
       hint: "SpeechRecognition is not supported",
     });
@@ -277,7 +278,7 @@ function setupVoiceRecognition() {
         hint: "Allow mic access from the browser address bar",
       });
       setArmButtonState();
-      setAssistantResponse("Microphone access was blocked. Allow mic access, then arm the wake word again.");
+      setAssistantResponse('Microphone access was blocked. Allow mic access, then tap the R again to re-arm "hey rock".');
       return;
     }
 
@@ -343,13 +344,13 @@ async function toggleVoiceArming() {
   setWakeStatus("Arming");
   setVoiceMode("Starting");
   setVoicePresence("starting", {
-    headline: "Waiting for microphone permission",
-    subtext: "Allow the browser microphone popup. When the orb turns red and pulses, ROKGPS is really listening.",
+    headline: "Arming wake listening",
+    subtext: 'Allow the browser microphone popup. When the red R starts glowing, ROKGPS is actively listening for "hey rock".',
     modeText: "ARMING",
     hint: "Look for a mic permission popup",
   });
   setArmButtonState();
-  setAssistantResponse('Allow microphone access in the browser prompt, then say "hey rok" and your destination command.');
+  setAssistantResponse('Allow microphone access in the browser prompt, then say "hey rock" and speak naturally.');
 
   const micReady = await ensureMicrophoneAccess();
   if (!micReady) {
@@ -371,7 +372,7 @@ function safeStartRecognition() {
     state.recognition.start();
   } catch (error) {
     if (!String(error.message || "").includes("start")) {
-      setAssistantResponse("The speech engine did not start cleanly. Try the arm button again.");
+      setAssistantResponse("The speech engine did not start cleanly. Tap the R again to re-arm it.");
     }
   }
 }
@@ -387,7 +388,7 @@ function disarmVoiceRecognition() {
   setVoiceMode("Standby");
   setArmButtonState();
   syncVoicePresence();
-  setAssistantResponse('Wake word disarmed. Press Start Listening whenever you want the mic live again.');
+  setAssistantResponse('Wake listening is off. Tap the R whenever you want ROKGPS listening for "hey rock" again.');
   if (state.recognitionRunning) {
     state.recognition.stop();
   } else {
@@ -427,7 +428,7 @@ function handleRecognizedText(text) {
           setWakeStatus("Armed");
           setVoiceMode("Wake listening");
           syncVoicePresence();
-          setAssistantResponse('I heard "hey rok" but not the destination. Say it again like "navigate to Central Park".');
+          setAssistantResponse('I heard "hey rock" but not the destination. Try again like "take me to Central Park".');
         }, 10000);
         setWakeStatus("Heard wake word");
         setVoiceMode("Awaiting command");
@@ -453,12 +454,12 @@ function handleRecognizedText(text) {
       setWakeStatus("Armed");
       setVoiceMode("Wake listening");
       syncVoicePresence();
-      setAssistantResponse('I heard "hey rok" but not the destination. Say it again like "navigate to Central Park".');
+      setAssistantResponse('I heard "hey rock" but not the destination. Try again like "take me to Central Park".');
     }, 10000);
     setWakeStatus("Heard wake word");
     setVoiceMode("Awaiting command");
     syncVoicePresence();
-    setAssistantResponse('Wake word detected. Now say something like "give me destination for Times Square".');
+    setAssistantResponse('Wake word detected. Now say something like "take me to Times Square" or ask ROK a question.');
     return;
   }
 
@@ -1026,7 +1027,7 @@ function pulseSpeechPresence(transcript) {
   clearSpeechPulse();
   setMicStatus("Hearing speech");
   setVoicePresence("hearing", {
-    headline: "I can hear you",
+    headline: 'Heard "hey rock" audio',
     subtext: `Live audio detected: "${truncateText(transcript, 100)}"`,
     modeText: "HEARING",
     hint: "Your voice is reaching the microphone",
@@ -1050,7 +1051,7 @@ async function ensureMicrophoneAccess() {
       modeText: "BLOCKED",
       hint: "Use the address-bar lock icon to allow the mic, then try again",
     });
-    setAssistantResponse("Microphone access is blocked for this page. Allow it in the browser, then press Start Listening again.");
+    setAssistantResponse("Microphone access is blocked for this page. Allow it in the browser, then tap the R again.");
     return false;
   }
 
@@ -1108,7 +1109,7 @@ async function ensureMicrophoneAccess() {
       modeText: "BLOCKED",
       hint: "Use the address-bar lock icon to allow the mic, then try again",
     });
-    setAssistantResponse("Microphone access was blocked. Allow it in the browser, then press Start Listening again.");
+    setAssistantResponse("Microphone access was blocked. Allow it in the browser, then tap the R again.");
     return false;
   }
 }
@@ -1152,6 +1153,9 @@ function isPermissionDeniedError(error) {
 
 function setVoicePresence(stateName, { headline, subtext, modeText, hint } = {}) {
   elements.listenerBanner.dataset.state = stateName;
+  if (elements.armVoiceBtn) {
+    elements.armVoiceBtn.dataset.state = stateName;
+  }
   if (headline) {
     elements.listenerHeadline.textContent = headline;
   }
@@ -1170,7 +1174,7 @@ function syncVoicePresence() {
   if (!state.voiceSupported) {
     setVoicePresence("unsupported", {
       headline: "Voice input is unavailable here",
-      subtext: "This browser does not expose the speech recognition API. Use Chrome or Edge on localhost.",
+      subtext: 'This browser does not expose the speech recognition API. Use Chrome or Edge, then tap the R to arm "hey rock".',
       modeText: "UNAVAILABLE",
       hint: "SpeechRecognition is not supported",
     });
@@ -1181,10 +1185,10 @@ function syncVoicePresence() {
   if (!state.voiceArmed) {
     if (state.micPermissionState === "granted") {
       setVoicePresence("off", {
-        headline: "Microphone permission is ready",
-        subtext: "The browser says the microphone is allowed. Press Start Listening to actually start the speech engine.",
+        headline: "Mic permission is ready",
+        subtext: 'The browser already allows the microphone. Tap the R to start always listening for "hey rock".',
         modeText: "READY",
-        hint: "Permission granted, but not listening yet",
+        hint: "Permission granted, but wake listening is off",
       });
       setArmButtonState();
       return;
@@ -1202,10 +1206,10 @@ function syncVoicePresence() {
     }
 
     setVoicePresence("off", {
-      headline: "Microphone is off",
-      subtext: "Press Start Listening, allow the browser microphone prompt, and wait for the orb to pulse before speaking.",
+      headline: "Mic is off",
+      subtext: 'Tap the R, allow the browser microphone prompt, and wait for the red glow before you speak.',
       modeText: "OFF",
-      hint: "Wake word inactive",
+      hint: 'Wake listening is not armed for "hey rock"',
     });
     setArmButtonState();
     return;
@@ -1214,9 +1218,9 @@ function syncVoicePresence() {
   if (state.ttsPausedRecognition) {
     setVoicePresence("recovering", {
       headline: "ROK is speaking",
-      subtext: "The microphone is briefly paused so ROK does not hear its own voice reply.",
+      subtext: 'The microphone is briefly paused so ROK does not hear its own voice reply.',
       modeText: "SPEAKING",
-      hint: "Listening will resume right after the reply",
+      hint: 'Wake listening will resume right after the reply',
     });
     setArmButtonState();
     return;
@@ -1225,7 +1229,7 @@ function syncVoicePresence() {
   if (!state.recognitionRunning) {
     setVoicePresence("starting", {
       headline: "Starting microphone",
-      subtext: "ROKGPS is trying to start the speech engine. If you do not see a red pulse, the mic is not live yet.",
+      subtext: 'ROKGPS is trying to start the speech engine. If the R is not glowing yet, the mic is not live.',
       modeText: "ARMING",
       hint: "Waiting for the browser speech engine",
     });
@@ -1235,48 +1239,56 @@ function syncVoicePresence() {
 
   if (state.waitingForCommand) {
     setVoicePresence("awaiting", {
-      headline: "Wake word heard",
-      subtext: 'ROKGPS heard "hey rok". Say the destination now, like "navigate to Newark Airport".',
-      modeText: "READY",
-      hint: "Listening for the next phrase",
+      headline: 'Heard "hey rock"',
+      subtext: 'Now say the destination or your question, like "take me to Newark Airport".',
+      modeText: "HEARD",
+      hint: "Listening for what comes next",
     });
     setArmButtonState();
     return;
   }
 
   setVoicePresence("listening", {
-    headline: "Microphone is live",
-    subtext: 'ROKGPS is actively listening now. Say "hey rok" and then your destination command.',
+    headline: 'Always listening for "hey rock"',
+    subtext: 'The red R means the mic is live. Say "hey rock" and then ask for directions or talk to ROK.',
     modeText: "LIVE",
-    hint: "Pulsing red means the mic is active",
+    hint: "Red glow means the mic is active",
   });
   setArmButtonState();
 }
 
 function setArmButtonState() {
+  if (!elements.armVoiceBtn) {
+    return;
+  }
+
   if (!state.voiceSupported) {
-    elements.armVoiceBtn.textContent = "Voice Unsupported";
     elements.armVoiceBtn.disabled = true;
     elements.armVoiceBtn.classList.remove("is-live");
+    elements.armVoiceBtn.setAttribute("aria-label", "Voice input unsupported");
+    elements.armVoiceBtn.title = "Voice input unsupported";
     return;
   }
 
   elements.armVoiceBtn.disabled = false;
 
   if (state.voiceArmed && state.recognitionRunning) {
-    elements.armVoiceBtn.textContent = "Stop Listening";
     elements.armVoiceBtn.classList.add("is-live");
+    elements.armVoiceBtn.setAttribute("aria-label", 'Stop listening for "hey rock"');
+    elements.armVoiceBtn.title = 'Stop listening for "hey rock"';
     return;
   }
 
   if (state.voiceArmed) {
-    elements.armVoiceBtn.textContent = "Starting Mic...";
     elements.armVoiceBtn.classList.add("is-live");
+    elements.armVoiceBtn.setAttribute("aria-label", "Starting microphone");
+    elements.armVoiceBtn.title = "Starting microphone";
     return;
   }
 
-  elements.armVoiceBtn.textContent = "Start Listening";
   elements.armVoiceBtn.classList.remove("is-live");
+  elements.armVoiceBtn.setAttribute("aria-label", 'Arm listening for "hey rock"');
+  elements.armVoiceBtn.title = 'Arm listening for "hey rock"';
 }
 
 function truncateText(text, maxLength) {
@@ -1304,16 +1316,18 @@ function syncTtsButtons() {
   }
 
   if (!state.ttsSupported) {
-    elements.ttsToggleBtn.textContent = "Voice Replies Unsupported";
+    elements.ttsToggleBtn.textContent = "Voice unsupported";
     elements.ttsToggleBtn.disabled = true;
     elements.ttsToggleBtn.classList.remove("is-active");
     elements.ttsStopBtn.disabled = true;
+    elements.ttsStopBtn.textContent = "Stop voice";
     return;
   }
 
   elements.ttsToggleBtn.disabled = false;
-  elements.ttsToggleBtn.textContent = state.ttsEnabled ? "Voice Replies On" : "Voice Replies Off";
+  elements.ttsToggleBtn.textContent = state.ttsEnabled ? "Voice on" : "Voice off";
   elements.ttsToggleBtn.classList.toggle("is-active", state.ttsEnabled);
+  elements.ttsStopBtn.textContent = "Stop voice";
   elements.ttsStopBtn.disabled = !state.ttsSpeaking && !state.ttsQueue.length && !state.ttsChunkBuffer;
 }
 

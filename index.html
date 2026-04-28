@@ -6,7 +6,7 @@
   <title>ROKGPS</title>
   <meta
     name="description"
-    content="ROKGPS is a voice-first navigation prototype that listens for 'hey rok' and maps the fastest route."
+    content="ROKGPS is a voice-first navigation prototype that listens for 'hey rock' and maps the fastest route."
   />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -23,128 +23,91 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="app-shell">
-    <header class="topbar">
-      <div class="brand-mark">ROK</div>
-      <div class="topbar-copy">
-        <p class="eyebrow">Voice-First Navigation</p>
-        <h1>ROKGPS</h1>
-      </div>
-    </header>
+  <div class="map-app">
+    <div id="map" class="map-canvas" aria-label="Map showing the route"></div>
 
-    <main class="mobile-stack">
-      <section class="voice-panel">
-        <div id="listenerBanner" class="listener-banner" data-state="off" aria-live="polite">
-          <div class="listener-hero">
-            <div class="listener-orb-shell" aria-hidden="true">
-              <div class="listener-orb">
-                <span class="listener-orb-core"></span>
-              </div>
+    <main class="overlay-stack">
+      <aside class="floating-column">
+        <section class="panel-glass search-card" aria-label="Destination search">
+          <form id="destinationForm" class="search-form">
+            <div class="search-input-shell">
+              <span class="search-icon" aria-hidden="true"></span>
+              <input
+                id="destinationInput"
+                name="destination"
+                type="text"
+                autocomplete="off"
+                placeholder='Search a place or say "hey rock"...'
+              />
             </div>
+            <button class="search-submit" type="submit">Route</button>
+          </form>
 
-            <div class="listener-copy">
-              <div class="listener-meta">
-                <span id="listenerModeText" class="mode-chip">OFF</span>
-                <span id="voiceModeBadge" class="voice-badge">Standby</span>
-              </div>
-              <h2 id="listenerHeadline">Microphone is off</h2>
-              <p id="listenerSubtext" class="listener-subtext">
-                Press Start Listening, then wait for the red pulse before you talk.
-              </p>
-              <p id="listenerHint" class="listener-hint">Wake word inactive</p>
+          <div class="quick-actions">
+            <button id="locateBtn" class="action-chip" type="button">My location</button>
+            <button id="ttsToggleBtn" class="action-chip" type="button">Voice Replies On</button>
+            <button id="ttsStopBtn" class="action-chip" type="button">Stop Voice</button>
+          </div>
+
+          <div class="preset-row" aria-label="Quick destinations">
+            <button class="preset-chip" type="button" data-destination="Times Square, New York City">Times Square</button>
+            <button class="preset-chip" type="button" data-destination="Grand Central Terminal, New York City">Grand Central</button>
+            <button class="preset-chip" type="button" data-destination="JFK Airport">JFK Airport</button>
+          </div>
+        </section>
+
+        <section class="panel-glass status-card" aria-live="polite">
+          <div class="status-topline">
+            <span id="listenerModeText" class="status-badge">OFF</span>
+            <span id="voiceModeBadge" class="status-badge status-badge-soft">Standby</span>
+          </div>
+
+          <p id="assistantResponse" class="assistant-copy">
+            Tap the R once, wait for the red glow, then say "hey rock" and your destination.
+          </p>
+          <p id="liveTranscript" class="transcript-copy">
+            Live transcript will show here once the mic is armed.
+          </p>
+          <p id="listenerHint" class="status-hint">Wake word inactive</p>
+
+          <div class="status-meta">
+            <span id="originStatus">Waiting for origin</span>
+            <span id="destinationStatus">Waiting for destination</span>
+          </div>
+        </section>
+
+        <section class="assistant-cache" hidden aria-hidden="true">
+          <div id="chatMessages" class="chat-messages">
+            <article class="chat-bubble assistant">
+              <span class="chat-role">ROK</span>
+              <p class="chat-text">Voice chat is ready. Ask naturally after saying "hey rock".</p>
+            </article>
+          </div>
+
+          <form id="chatForm" class="chat-form">
+            <label for="chatInput">Message ROK</label>
+            <div class="chat-input-row">
+              <textarea id="chatInput" rows="2" placeholder="Ask ROK anything..." autocomplete="off"></textarea>
+              <button id="chatSendBtn" class="search-submit" type="submit">Send</button>
             </div>
-          </div>
+          </form>
+        </section>
+      </aside>
 
-          <div class="action-row">
-            <button id="armVoiceBtn" class="primary-btn" type="button">Start Listening</button>
-            <button id="locateBtn" class="secondary-btn" type="button">Use My Location</button>
-          </div>
-        </div>
+      <section class="panel-glass route-sheet" aria-label="Route directions">
+        <div class="sheet-handle" aria-hidden="true"></div>
 
-        <div class="message-stack">
-          <section class="message-card">
-            <span class="message-label">Live Transcript</span>
-            <p id="liveTranscript" class="message-text">
-              Press Start Listening and wait for the red pulse before speaking.
-            </p>
-          </section>
-
-          <section class="message-card">
-            <span class="message-label">ROK Says</span>
-            <p id="assistantResponse" class="message-text">
-              Chrome or Edge on localhost gives the best wake-word and speech-to-text support.
-            </p>
-          </section>
-        </div>
-      </section>
-
-      <section class="panel chat-panel">
-        <div class="section-head">
-          <h2>Conversation</h2>
-          <p class="section-copy">Ask ROK anything, or use your voice and speak naturally.</p>
-        </div>
-
-        <div class="chat-toolbar">
-          <button id="ttsToggleBtn" class="secondary-btn chat-toggle-btn" type="button">Voice Replies On</button>
-          <button id="ttsStopBtn" class="secondary-btn chat-toggle-btn" type="button">Stop Voice</button>
-        </div>
-
-        <div id="chatMessages" class="chat-messages" aria-live="polite">
-          <article class="chat-bubble assistant">
-            <span class="chat-role">ROK</span>
-            <p class="chat-text">I can help with directions, road-trip questions, or general conversation. If voice replies are on, I will speak while I answer.</p>
-          </article>
-        </div>
-
-        <form id="chatForm" class="chat-form">
-          <label for="chatInput">Message ROK</label>
-          <div class="chat-input-row">
-            <textarea id="chatInput" rows="2" placeholder="Ask ROK anything..." autocomplete="off"></textarea>
-            <button id="chatSendBtn" class="route-btn" type="submit">Send</button>
-          </div>
-        </form>
-      </section>
-
-      <section class="panel destination-panel">
-        <div class="section-head">
-          <p class="eyebrow">Destination</p>
-          <h2>Where do you want to go?</h2>
-          <p class="section-copy">Say it out loud or type it below.</p>
-        </div>
-
-        <form id="destinationForm" class="destination-form">
-          <label for="destinationInput">Destination</label>
-          <div class="input-row">
-            <input
-              id="destinationInput"
-              name="destination"
-              type="text"
-              autocomplete="off"
-              placeholder="Times Square, JFK Airport, Central Park..."
-            />
-            <button class="route-btn" type="submit">Route It</button>
-          </div>
-        </form>
-
-        <div class="preset-row" aria-label="Quick destinations">
-          <button class="preset-chip" type="button" data-destination="Times Square, New York City">Times Square</button>
-          <button class="preset-chip" type="button" data-destination="Grand Central Terminal, New York City">Grand Central</button>
-          <button class="preset-chip" type="button" data-destination="JFK Airport">JFK Airport</button>
-        </div>
-      </section>
-
-      <section class="panel map-panel">
-        <div class="section-head section-head-tight">
+        <div class="sheet-head">
           <div>
-            <p class="eyebrow">Route</p>
-            <h2>Fastest route</h2>
+            <p class="sheet-kicker">Fastest route</p>
+            <h1>Directions</h1>
           </div>
-          <p class="map-hint">Tap the map to set your start point.</p>
+          <p class="sheet-copy">Tap the map anytime to pin a different start point.</p>
         </div>
 
         <div class="map-summary">
           <article class="summary-card">
-            <span>Trip Time</span>
+            <span>Trip</span>
             <strong id="tripTimeValue">--</strong>
           </article>
           <article class="summary-card">
@@ -157,19 +120,26 @@
           </article>
         </div>
 
-        <div id="map" class="map-canvas" aria-label="Map showing the route"></div>
-      </section>
-
-      <section class="panel directions-panel">
-        <div class="section-head">
-          <p class="eyebrow">Directions</p>
-          <h2>Turn by turn</h2>
-        </div>
-
         <ol id="routeSteps" class="steps-list">
           <li class="empty-step">Your directions will show up here after you ask ROKGPS for a destination.</li>
         </ol>
       </section>
+
+      <div class="voice-dock">
+        <div id="listenerBanner" class="listener-pill" data-state="off">
+          <strong id="listenerHeadline">Mic is off</strong>
+          <p id="listenerSubtext">Tap the R once to arm "hey rock".</p>
+        </div>
+
+        <button id="armVoiceBtn" class="rok-fab" type="button" aria-label='Arm wake listening for "hey rock"'>
+          <span class="rok-fab-core">R</span>
+        </button>
+      </div>
+
+      <div class="sr-only-status" aria-hidden="true">
+        <span id="micStatus">Idle</span>
+        <span id="wakeStatus">Disarmed</span>
+      </div>
     </main>
   </div>
 
