@@ -17,13 +17,25 @@ const WAKE_WITH_TRAILING_TEXT_REGEX = /\bhey\s+(?:rok|rock|r[\s.-]*o[\s.-]*k)\b[
 const COMMAND_PATTERNS = [
   /give me destination for\s+(.+)/i,
   /destination for\s+(.+)/i,
+  /directions?(?:\s+(?:for|to))\s+(.+)/i,
+  /navigation(?:\s+(?:for|to))\s+(.+)/i,
   /navigate(?: me)? to\s+(.+)/i,
   /navigate to\s+(.+)/i,
   /take me to\s+(.+)/i,
   /route(?: me)? to\s+(.+)/i,
   /go to\s+(.+)/i,
+  /get to\s+(.+)/i,
+  /how do i get to\s+(.+)/i,
   /find\s+(.+)/i,
 ];
+const LEADING_FILLER_REGEX = /^(?:(?:uh+|um+|umm+|er+|ah+|hmm+|mm+|like|okay|ok|alright|all right|well|so|please|just|actually|literally|basically)\b[\s,.-]*)+/i;
+const TRAILING_FILLER_REGEX = /(?:[\s,.-]+(?:(?:please|thanks|thank you|for me|right now|real quick|if you can|you know|kind of|sort of)))+$/i;
+const LEADING_HELPER_REGEXES = [
+  /^(?:can you|could you|would you|will you)\s+/i,
+  /^(?:i want to|i wanna|i need to|i need directions to|i need a route to)\s+/i,
+  /^(?:show me|find me|give me|get me)\s+/i,
+];
+const CHATY_PREFIX_REGEX = /^(?:what|who|when|where|why|how|tell|explain|describe|do|does|did|can|could|would|will|should|is|are|am|was|were)\b/i;
 
 const state = {
   map: null,
@@ -140,9 +152,10 @@ function wireEvents() {
 
   elements.destinationForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const destination = elements.destinationInput.value.trim();
+    const rawDestination = elements.destinationInput.value.trim();
+    const destination = extractDestinationFromCommand(rawDestination, { allowBare: true }) || sanitizeDestinationCandidate(rawDestination);
     if (!destination) {
-      setAssistantResponse("Type a destination first, then I can map the route.");
+      setAssistantResponse("Say or type a real place name, like Detroit or JFK Airport.");
       return;
     }
     await planRoute(destination);
@@ -405,6 +418,24 @@ function handleRecognizedText(text) {
         return;
       }
 
+      const cleanedWakeRemainder = stripSpeechNoise(wakeRemainder);
+      if (!cleanedWakeRemainder) {
+        state.waitingForCommand = true;
+        clearWaitingTimer();
+        state.waitingTimer = window.setTimeout(() => {
+          state.waitingForCommand = false;
+          setWakeStatus("Armed");
+          setVoiceMode("Wake listening");
+          syncVoicePresence();
+          setAssistantResponse('I heard "hey rok" but not the destination. Say it again like "navigate to Central Park".');
+        }, 10000);
+        setWakeStatus("Heard wake word");
+        setVoiceMode("Awaiting command");
+        syncVoicePresence();
+        setAssistantResponse("I am listening. Say the place name whenever you're ready.");
+        return;
+      }
+
       state.waitingForCommand = false;
       clearWaitingTimer();
       setWakeStatus(state.voiceArmed ? "Armed" : "Disarmed");
@@ -434,6 +465,11 @@ function handleRecognizedText(text) {
   if (state.waitingForCommand) {
     const destination = extractDestinationFromCommand(text, { allowBare: true });
     if (!destination) {
+      const cleanedText = stripSpeechNoise(text);
+      if (!cleanedText) {
+        setAssistantResponse("Still listening for the place name.");
+        return;
+      }
       state.waitingForCommand = false;
       clearWaitingTimer();
       setWakeStatus(state.voiceArmed ? "Armed" : "Disarmed");
@@ -456,16 +492,19 @@ function parseWakeText(text) {
 }
 
 function extractDestinationFromCommand(text, options = {}) {
-  const cleanText = text.replace(WAKE_REGEX, "").trim();
+  const cleanText = simplifyRoutePrompt(text);
   for (const pattern of COMMAND_PATTERNS) {
     const match = cleanText.match(pattern);
     if (match && match[1]) {
-      return tidyDestination(match[1]);
+      return sanitizeDestinationCandidate(match[1]);
     }
   }
 
-  if (options.allowBare && cleanText.length > 2) {
-    return tidyDestination(cleanText.replace(/^to\s+/i, ""));
+  if (options.allowBare) {
+    const bareCandidate = sanitizeDestinationCandidate(cleanText.replace(/^to\s+/i, ""));
+    if (isLikelyBareDestination(bareCandidate)) {
+      return bareCandidate;
+    }
   }
 
   return "";
@@ -476,6 +515,78 @@ function tidyDestination(rawDestination) {
     .replace(/[.?!]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function stripSpeechNoise(rawText) {
+  let text = String(rawText || "").replace(WAKE_REGEX, " ").replace(/\s+/g, " ").trim();
+  if (!text) {
+    return "";
+  }
+
+  let previous = "";
+  while (text && text !== previous) {
+    previous = text;
+    text = text.replace(LEADING_FILLER_REGEX, "").replace(TRAILING_FILLER_REGEX, "").trim();
+    for (const regex of LEADING_HELPER_REGEXES) {
+      text = text.replace(regex, "").trim();
+    }
+  }
+
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function simplifyRoutePrompt(rawText) {
+  let text = stripSpeechNoise(rawText)
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!text) {
+    return "";
+  }
+
+  text = text
+    .replace(/^(?:can you|could you|would you|will you)\s+/i, "")
+    .replace(/^(?:please\s+)?(?:show me|get me|give me|find me)\s+/i, "$&")
+    .replace(/\b(?:please|thanks|thank you)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return text;
+}
+
+function sanitizeDestinationCandidate(rawText) {
+  return tidyDestination(
+    stripSpeechNoise(rawText)
+      .replace(/^(?:destination|directions?|navigation|route)\s+(?:for|to)\s+/i, "")
+      .replace(/^(?:route|navigate|map)(?:\s+me)?\s+to\s+/i, "")
+      .replace(/^(?:take|bring|drive)\s+me\s+to\s+/i, "")
+      .replace(/^(?:go|get)\s+to\s+/i, "")
+      .replace(/^to\s+/i, "")
+      .replace(/\b(?:please|thanks|thank you|for me|right now|real quick)\b/gi, " ")
+      .replace(/\s+/g, " ")
+  );
+}
+
+function isLikelyBareDestination(text) {
+  const candidate = sanitizeDestinationCandidate(text);
+  if (!candidate) {
+    return false;
+  }
+
+  if (CHATY_PREFIX_REGEX.test(candidate) || /[?]$/.test(candidate)) {
+    return false;
+  }
+
+  const words = candidate.split(/\s+/).filter(Boolean);
+  if (!words.length || words.length > 7) {
+    return false;
+  }
+
+  if (!/[a-z0-9]/i.test(candidate)) {
+    return false;
+  }
+
+  return true;
 }
 
 async function requestUserLocation({ silent = false, recenter = true } = {}) {
@@ -552,8 +663,11 @@ function setOrigin(coords, { source = "location", recenter = true } = {}) {
 }
 
 async function planRoute(destinationText) {
-  const destination = destinationText.trim();
+  const destination =
+    extractDestinationFromCommand(destinationText, { allowBare: true }) ||
+    sanitizeDestinationCandidate(destinationText);
   if (!destination) {
+    setAssistantResponse("I still need a place name before I can route anywhere.");
     return;
   }
 
@@ -1611,25 +1725,37 @@ function calculateEta(seconds) {
 }
 
 function setAssistantResponse(text) {
-  elements.assistantResponse.textContent = text;
+  if (elements.assistantResponse) {
+    elements.assistantResponse.textContent = text;
+  }
 }
 
 function setMicStatus(text) {
-  elements.micStatus.textContent = text;
+  if (elements.micStatus) {
+    elements.micStatus.textContent = text;
+  }
 }
 
 function setWakeStatus(text) {
-  elements.wakeStatus.textContent = text;
+  if (elements.wakeStatus) {
+    elements.wakeStatus.textContent = text;
+  }
 }
 
 function setOriginStatus(text) {
-  elements.originStatus.textContent = text;
+  if (elements.originStatus) {
+    elements.originStatus.textContent = text;
+  }
 }
 
 function setDestinationStatus(text) {
-  elements.destinationStatus.textContent = text;
+  if (elements.destinationStatus) {
+    elements.destinationStatus.textContent = text;
+  }
 }
 
 function setVoiceMode(text) {
-  elements.voiceModeBadge.textContent = text;
+  if (elements.voiceModeBadge) {
+    elements.voiceModeBadge.textContent = text;
+  }
 }

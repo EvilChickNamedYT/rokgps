@@ -194,7 +194,6 @@ body {
 .section-copy,
 .map-hint,
 .message-text,
-.status-pill span,
 .summary-card span,
 .step-meta {
   color: var(--muted);
@@ -359,7 +358,6 @@ button {
 }
 
 .message-card,
-.status-pill,
 .summary-card,
 .step-item,
 .empty-step {
@@ -384,33 +382,6 @@ button {
 .message-text {
   margin: 0;
   line-height: 1.45;
-}
-
-.status-row {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.status-pill {
-  border-radius: 18px;
-  padding: 12px 13px;
-}
-
-.status-pill span {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-}
-
-.status-pill strong {
-  display: block;
-  font-size: 0.96rem;
-  line-height: 1.25;
-  overflow-wrap: anywhere;
 }
 
 .panel {
