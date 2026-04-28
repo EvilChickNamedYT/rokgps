@@ -6,6 +6,11 @@ const DEFAULT_VIEW = {
 
 const HOSTED_API_BASE = "https://rokgpsbackend.kyklos.online";
 const API_BASE = resolveApiBase();
+const CHAT_API_URL = `${API_BASE}/api/rok-chat`;
+const PUBLIC_ROUTER_BASES = [
+  "https://router.project-osrm.org/route/v1/driving",
+  "https://routing.openstreetmap.de/routed-car/route/v1/driving",
+];
 
 const WAKE_REGEX = /\bhey\s+(?:rok|rock|r[\s.-]*o[\s.-]*k)\b/i;
 const WAKE_WITH_TRAILING_TEXT_REGEX = /\bhey\s+(?:rok|rock|r[\s.-]*o[\s.-]*k)\b[\s,:-]*(.*)$/i;
@@ -39,6 +44,15 @@ const state = {
   speechPulseTimer: null,
   speechStartTimer: null,
   micPermissionState: "unknown",
+  chatHistory: [],
+  chatInFlight: false,
+  ttsSupported: false,
+  ttsEnabled: true,
+  ttsQueue: [],
+  ttsSpeaking: false,
+  ttsChunkBuffer: "",
+  ttsVoice: null,
+  ttsPausedRecognition: false,
 };
 
 const elements = {
@@ -49,6 +63,12 @@ const elements = {
   listenerSubtext: document.querySelector("#listenerSubtext"),
   listenerModeText: document.querySelector("#listenerModeText"),
   listenerHint: document.querySelector("#listenerHint"),
+  chatForm: document.querySelector("#chatForm"),
+  chatInput: document.querySelector("#chatInput"),
+  chatSendBtn: document.querySelector("#chatSendBtn"),
+  chatMessages: document.querySelector("#chatMessages"),
+  ttsToggleBtn: document.querySelector("#ttsToggleBtn"),
+  ttsStopBtn: document.querySelector("#ttsStopBtn"),
   destinationForm: document.querySelector("#destinationForm"),
   destinationInput: document.querySelector("#destinationInput"),
   liveTranscript: document.querySelector("#liveTranscript"),
@@ -69,6 +89,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initMap();
   wireEvents();
   setupVoiceRecognition();
+  setupTts();
   syncVoicePresence();
   void refreshMicrophonePermissionState();
   requestUserLocation({ silent: true, recenter: false });
@@ -104,6 +125,18 @@ function wireEvents() {
     await toggleVoiceArming();
   });
   elements.locateBtn.addEventListener("click", () => requestUserLocation({ silent: false, recenter: true }));
+  elements.ttsToggleBtn.addEventListener("click", toggleTts);
+  elements.ttsStopBtn.addEventListener("click", stopTtsPlayback);
+
+  elements.chatForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const message = elements.chatInput.value.trim();
+    if (!message) {
+      return;
+    }
+    elements.chatInput.value = "";
+    await sendRokMessage(message, { fromVoice: false });
+  });
 
   elements.destinationForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -122,6 +155,33 @@ function wireEvents() {
       await planRoute(destination);
     });
   });
+}
+
+function setupTts() {
+  state.ttsSupported = "speechSynthesis" in window && typeof SpeechSynthesisUtterance !== "undefined";
+  if (!state.ttsSupported) {
+    state.ttsEnabled = false;
+    syncTtsButtons();
+    return;
+  }
+
+  const pickVoice = () => {
+    const voices = window.speechSynthesis.getVoices();
+    if (!voices.length) {
+      return;
+    }
+    state.ttsVoice =
+      voices.find((voice) => /^en(-|_)/i.test(voice.lang) && /female|samantha|aria|jenny|zira|google us english/i.test(voice.name)) ||
+      voices.find((voice) => /^en(-|_)/i.test(voice.lang)) ||
+      voices[0] ||
+      null;
+  };
+
+  pickVoice();
+  if ("onvoiceschanged" in window.speechSynthesis) {
+    window.speechSynthesis.onvoiceschanged = pickVoice;
+  }
+  syncTtsButtons();
 }
 
 function setupVoiceRecognition() {
@@ -158,6 +218,13 @@ function setupVoiceRecognition() {
 
   state.recognition.onend = () => {
     state.recognitionRunning = false;
+    if (state.ttsPausedRecognition) {
+      setMicStatus("Paused for voice reply");
+      setWakeStatus("Armed");
+      setVoiceMode("ROK speaking");
+      syncVoicePresence();
+      return;
+    }
     if (state.shouldRestartRecognition) {
       setMicStatus("Restarting");
       setVoiceMode("Reconnecting");
@@ -337,6 +404,15 @@ function handleRecognizedText(text) {
         void planRoute(embeddedDestination);
         return;
       }
+
+      state.waitingForCommand = false;
+      clearWaitingTimer();
+      setWakeStatus(state.voiceArmed ? "Armed" : "Disarmed");
+      setVoiceMode(state.voiceArmed ? "Wake listening" : "Standby");
+      syncVoicePresence();
+      setAssistantResponse("Sending your question to ROK.");
+      void sendRokMessage(wakeRemainder, { fromVoice: true });
+      return;
     }
 
     state.waitingForCommand = true;
@@ -358,7 +434,13 @@ function handleRecognizedText(text) {
   if (state.waitingForCommand) {
     const destination = extractDestinationFromCommand(text, { allowBare: true });
     if (!destination) {
-      setAssistantResponse('I am listening, but I still need the destination name. Try "take me to JFK Airport".');
+      state.waitingForCommand = false;
+      clearWaitingTimer();
+      setWakeStatus(state.voiceArmed ? "Armed" : "Disarmed");
+      setVoiceMode(state.voiceArmed ? "Wake listening" : "Standby");
+      syncVoicePresence();
+      setAssistantResponse("Sending that to ROK.");
+      void sendRokMessage(text, { fromVoice: true });
       return;
     }
     void planRoute(destination);
@@ -499,7 +581,19 @@ async function planRoute(destinationText) {
     const payload = await response.json();
 
     if (!response.ok) {
-      throw new Error(payload.error || "Route request failed.");
+      const message = payload.error || "Route request failed.";
+      if (response.status >= 500 || /routing service could not be reached/i.test(message)) {
+        const fallbackPayload = await fetchRouteWithBrowserFallback(destination, origin);
+        renderRoute(fallbackPayload);
+        state.waitingForCommand = false;
+        clearWaitingTimer();
+        setWakeStatus(state.voiceArmed ? "Armed" : "Disarmed");
+        setVoiceMode(state.voiceArmed ? "Wake listening" : "Standby");
+        syncVoicePresence();
+        setAssistantResponse(`Fastest route ready for ${fallbackPayload.destination.name}.`);
+        return;
+      }
+      throw new Error(message);
     }
 
     renderRoute(payload);
@@ -510,10 +604,21 @@ async function planRoute(destinationText) {
     syncVoicePresence();
     setAssistantResponse(`Fastest route ready for ${payload.destination.name}.`);
   } catch (error) {
-    setDestinationStatus("Route failed");
-    setVoiceMode(state.voiceArmed ? "Wake listening" : "Standby");
-    syncVoicePresence();
-    setAssistantResponse(error.message || "Routing failed. Try another destination.");
+    try {
+      const fallbackPayload = await fetchRouteWithBrowserFallback(destination, origin);
+      renderRoute(fallbackPayload);
+      state.waitingForCommand = false;
+      clearWaitingTimer();
+      setWakeStatus(state.voiceArmed ? "Armed" : "Disarmed");
+      setVoiceMode(state.voiceArmed ? "Wake listening" : "Standby");
+      syncVoicePresence();
+      setAssistantResponse(`Fastest route ready for ${fallbackPayload.destination.name}.`);
+    } catch (fallbackError) {
+      setDestinationStatus("Route failed");
+      setVoiceMode(state.voiceArmed ? "Wake listening" : "Standby");
+      syncVoicePresence();
+      setAssistantResponse(fallbackError.message || error.message || "Routing failed. Try another destination.");
+    }
   }
 }
 
@@ -561,6 +666,174 @@ function renderRoute(payload) {
 
   state.map.fitBounds(bounds.pad(0.15));
   renderRouteSteps(steps);
+}
+
+async function fetchRouteWithBrowserFallback(destinationText, origin) {
+  const destination = await fetchDestinationViaBackendGeocode(destinationText);
+  let lastError = null;
+
+  for (const routerBase of PUBLIC_ROUTER_BASES) {
+    try {
+      const params = new URLSearchParams({
+        overview: "full",
+        geometries: "geojson",
+        steps: "true",
+      });
+      const response = await fetch(
+        `${routerBase}/${origin.lon},${origin.lat};${destination.lon},${destination.lat}?${params.toString()}`,
+        {
+          headers: {
+            Accept: "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        let message = `Public router failed (${response.status}).`;
+        try {
+          const payload = await response.json();
+          if (payload && typeof payload.message === "string" && payload.message.trim()) {
+            message = payload.message.trim();
+          } else if (payload && typeof payload.code === "string" && payload.code.trim()) {
+            message = payload.code.trim();
+          }
+        } catch (error) {
+          // Ignore JSON parse failures and keep the generic message.
+        }
+        throw new Error(message);
+      }
+
+      const payload = await response.json();
+      return mapOsrmRoutePayload(origin, destination, payload);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw new Error(
+    (lastError && lastError.message) || "The routing service could not be reached right now."
+  );
+}
+
+async function fetchDestinationViaBackendGeocode(destinationText) {
+  const params = new URLSearchParams({
+    q: destinationText,
+  });
+  const response = await fetch(`${API_BASE}/api/geocode?${params.toString()}`);
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "Destination lookup failed.");
+  }
+  return payload;
+}
+
+function mapOsrmRoutePayload(origin, destination, payload) {
+  const routes = payload && Array.isArray(payload.routes) ? payload.routes : [];
+  if (!routes.length) {
+    throw new Error("No drivable route was found.");
+  }
+
+  const route = routes[0];
+  const leg = Array.isArray(route.legs) && route.legs.length ? route.legs[0] : { steps: [] };
+  const steps = Array.isArray(leg.steps)
+    ? leg.steps.map((step) => ({
+        instruction: buildInstructionFromOsrmStep(step),
+        distance_meters: Number(step.distance || 0),
+        duration_seconds: Number(step.duration || 0),
+        name: pickRoadNameFromOsrmStep(step),
+      }))
+    : [];
+
+  return {
+    origin: {
+      lat: origin.lat,
+      lon: origin.lon,
+    },
+    destination: {
+      name: destination.name,
+      lat: destination.lat,
+      lon: destination.lon,
+    },
+    route: {
+      distance_meters: Number(route.distance || 0),
+      duration_seconds: Number(route.duration || 0),
+      geometry: route.geometry || { type: "LineString", coordinates: [] },
+      steps,
+    },
+  };
+}
+
+function pickRoadNameFromOsrmStep(step) {
+  const name = String(step && step.name ? step.name : "").trim();
+  if (name) {
+    return name;
+  }
+  const ref = String(step && step.ref ? step.ref : "").trim();
+  if (ref) {
+    return ref;
+  }
+  const destinations = String(step && step.destinations ? step.destinations : "").trim();
+  if (destinations) {
+    return destinations;
+  }
+  const rotaryName = String(step && step.rotary_name ? step.rotary_name : "").trim();
+  if (rotaryName) {
+    return rotaryName;
+  }
+  return "the road ahead";
+}
+
+function buildInstructionFromOsrmStep(step) {
+  const maneuver = (step && step.maneuver) || {};
+  const stepType = String(maneuver.type || "continue").trim().toLowerCase();
+  const modifier = String(maneuver.modifier || "").trim().toLowerCase();
+  const road = pickRoadNameFromOsrmStep(step);
+
+  if (stepType === "depart") {
+    return modifier ? `Head ${modifier} on ${road}` : `Start on ${road}`;
+  }
+  if (stepType === "arrive") {
+    return modifier === "left" || modifier === "right"
+      ? `Arrive at your destination on the ${modifier}`
+      : "Arrive at your destination";
+  }
+  if (stepType === "turn") {
+    return `Turn ${modifier || "ahead"} onto ${road}`;
+  }
+  if (stepType === "continue") {
+    return modifier ? `Continue ${modifier} on ${road}` : `Continue on ${road}`;
+  }
+  if (stepType === "new name") {
+    return `Continue onto ${road}`;
+  }
+  if (stepType === "merge") {
+    return `Merge ${modifier} onto ${road}`.replace("  ", " ").trim();
+  }
+  if (stepType === "on ramp") {
+    return `Take the ramp ${modifier} onto ${road}`.replace("  ", " ").trim();
+  }
+  if (stepType === "off ramp") {
+    return `Take the exit ${modifier} toward ${road}`.replace("  ", " ").trim();
+  }
+  if (stepType === "fork") {
+    return `Keep ${modifier || "straight"} to stay on ${road}`;
+  }
+  if (stepType === "roundabout") {
+    const exitNumber = maneuver.exit;
+    return exitNumber
+      ? `Enter the roundabout and take exit ${exitNumber} onto ${road}`
+      : `Enter the roundabout toward ${road}`;
+  }
+  if (stepType === "rotary") {
+    return `Go through the rotary toward ${road}`;
+  }
+  if (stepType === "notification") {
+    return `Continue on ${road}`;
+  }
+  if (stepType === "end of road") {
+    return `At the end of the road, turn ${modifier || "as needed"}`;
+  }
+  return `${stepType.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())} on ${road}`;
 }
 
 function renderRouteSteps(steps) {
@@ -824,6 +1097,17 @@ function syncVoicePresence() {
     return;
   }
 
+  if (state.ttsPausedRecognition) {
+    setVoicePresence("recovering", {
+      headline: "ROK is speaking",
+      subtext: "The microphone is briefly paused so ROK does not hear its own voice reply.",
+      modeText: "SPEAKING",
+      hint: "Listening will resume right after the reply",
+    });
+    setArmButtonState();
+    return;
+  }
+
   if (!state.recognitionRunning) {
     setVoicePresence("starting", {
       headline: "Starting microphone",
@@ -887,6 +1171,395 @@ function truncateText(text, maxLength) {
     return clean;
   }
   return `${clean.slice(0, maxLength - 3)}...`;
+}
+
+function toggleTts() {
+  if (!state.ttsSupported) {
+    return;
+  }
+  state.ttsEnabled = !state.ttsEnabled;
+  if (!state.ttsEnabled) {
+    stopTtsPlayback();
+  }
+  syncTtsButtons();
+}
+
+function syncTtsButtons() {
+  if (!elements.ttsToggleBtn || !elements.ttsStopBtn) {
+    return;
+  }
+
+  if (!state.ttsSupported) {
+    elements.ttsToggleBtn.textContent = "Voice Replies Unsupported";
+    elements.ttsToggleBtn.disabled = true;
+    elements.ttsToggleBtn.classList.remove("is-active");
+    elements.ttsStopBtn.disabled = true;
+    return;
+  }
+
+  elements.ttsToggleBtn.disabled = false;
+  elements.ttsToggleBtn.textContent = state.ttsEnabled ? "Voice Replies On" : "Voice Replies Off";
+  elements.ttsToggleBtn.classList.toggle("is-active", state.ttsEnabled);
+  elements.ttsStopBtn.disabled = !state.ttsSpeaking && !state.ttsQueue.length && !state.ttsChunkBuffer;
+}
+
+function stopTtsPlayback() {
+  state.ttsQueue = [];
+  state.ttsChunkBuffer = "";
+  state.ttsSpeaking = false;
+  if (state.ttsSupported) {
+    window.speechSynthesis.cancel();
+  }
+  resumeRecognitionAfterTts();
+  syncTtsButtons();
+}
+
+function maybeQueueTtsChunk(token) {
+  if (!state.ttsSupported || !state.ttsEnabled) {
+    return;
+  }
+
+  state.ttsChunkBuffer += token;
+  const readyByPunctuation = /[.!?]\s*$/.test(state.ttsChunkBuffer);
+  const readyByLength = state.ttsChunkBuffer.length >= 110 && /\s/.test(state.ttsChunkBuffer.slice(-1));
+  if (!readyByPunctuation && !readyByLength) {
+    return;
+  }
+
+  queueTtsText(state.ttsChunkBuffer);
+  state.ttsChunkBuffer = "";
+}
+
+function flushTtsChunkBuffer() {
+  if (!state.ttsSupported || !state.ttsEnabled) {
+    state.ttsChunkBuffer = "";
+    return;
+  }
+  if (state.ttsChunkBuffer.trim()) {
+    queueTtsText(state.ttsChunkBuffer);
+    state.ttsChunkBuffer = "";
+  }
+}
+
+function queueTtsText(text) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (!clean) {
+    return;
+  }
+  state.ttsQueue.push(clean);
+  pumpTtsQueue();
+}
+
+function pumpTtsQueue() {
+  if (!state.ttsSupported || !state.ttsEnabled) {
+    syncTtsButtons();
+    return;
+  }
+  if (state.ttsSpeaking || !state.ttsQueue.length) {
+    syncTtsButtons();
+    return;
+  }
+
+  const nextChunk = state.ttsQueue.shift();
+  pauseRecognitionForTts();
+  const utterance = new SpeechSynthesisUtterance(nextChunk);
+  if (state.ttsVoice) {
+    utterance.voice = state.ttsVoice;
+  }
+  utterance.rate = 1;
+  utterance.pitch = 1;
+  utterance.onstart = () => {
+    state.ttsSpeaking = true;
+    syncTtsButtons();
+  };
+  utterance.onend = () => {
+    state.ttsSpeaking = false;
+    syncTtsButtons();
+    if (!state.ttsQueue.length) {
+      resumeRecognitionAfterTts();
+    }
+    pumpTtsQueue();
+  };
+  utterance.onerror = () => {
+    state.ttsSpeaking = false;
+    syncTtsButtons();
+    if (!state.ttsQueue.length) {
+      resumeRecognitionAfterTts();
+    }
+    pumpTtsQueue();
+  };
+  window.speechSynthesis.speak(utterance);
+}
+
+function pauseRecognitionForTts() {
+  if (!state.voiceArmed || !state.recognitionRunning || state.ttsPausedRecognition) {
+    return;
+  }
+  state.ttsPausedRecognition = true;
+  state.shouldRestartRecognition = false;
+  setMicStatus("Paused for voice reply");
+  setVoiceMode("ROK speaking");
+  if (state.recognition) {
+    state.recognition.stop();
+  }
+}
+
+function resumeRecognitionAfterTts() {
+  if (!state.ttsPausedRecognition) {
+    return;
+  }
+  state.ttsPausedRecognition = false;
+  if (!state.voiceArmed) {
+    return;
+  }
+  state.shouldRestartRecognition = true;
+  setMicStatus("Restarting");
+  setVoiceMode("Wake listening");
+  syncVoicePresence();
+  safeStartRecognition();
+}
+
+async function sendRokMessage(message, { fromVoice = false } = {}) {
+  const trimmed = String(message || "").trim();
+  if (!trimmed || state.chatInFlight) {
+    return;
+  }
+
+  state.chatInFlight = true;
+  if (elements.chatSendBtn) {
+    elements.chatSendBtn.disabled = true;
+    elements.chatSendBtn.textContent = "Thinking...";
+  }
+
+  stopTtsPlayback();
+  appendChatMessage("user", trimmed);
+  const assistantBubble = appendChatMessage("assistant", "", { streaming: true });
+  setAssistantResponse(fromVoice ? "ROK is answering out loud." : "ROK is answering.");
+
+  const priorHistory = state.chatHistory.slice(-12);
+  let assistantText = "";
+
+  try {
+    const response = await fetch(CHAT_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: trimmed,
+        history: priorHistory,
+      }),
+    });
+
+    if (!response.ok) {
+      let errorMessage = `ROK chat failed (${response.status}).`;
+      try {
+        const err = await response.json();
+        if (err && typeof err.error === "string" && err.error.trim()) {
+          errorMessage = err.error.trim();
+        }
+      } catch (error) {
+        // Ignore JSON parse failures and fall back to the generic error.
+      }
+      updateChatMessage(assistantBubble, errorMessage, { streaming: false });
+      setAssistantResponse(errorMessage);
+      return;
+    }
+
+    if (!response.body) {
+      const fallback = "ROK returned an empty response body.";
+      updateChatMessage(assistantBubble, fallback, { streaming: false });
+      setAssistantResponse(fallback);
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let pending = "";
+
+    const applyPayload = (rawPayload) => {
+      const parsed = extractTokenFromStreamPayload(rawPayload);
+      if (parsed.token) {
+        assistantText += parsed.token;
+        updateChatMessage(assistantBubble, assistantText, { streaming: !parsed.done });
+        maybeQueueTtsChunk(parsed.token);
+      }
+      if (!assistantText && parsed.assistant_content) {
+        assistantText = parsed.assistant_content;
+        updateChatMessage(assistantBubble, assistantText, { streaming: !parsed.done });
+      }
+      return parsed.done;
+    };
+
+    let streamDone = false;
+    while (!streamDone) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      pending += decoder.decode(value, { stream: true });
+      const blocks = pending.split("\n\n");
+      pending = blocks.pop() || "";
+
+      for (const block of blocks) {
+        const lines = block.split("\n");
+        for (const line of lines) {
+          if (!line.startsWith("data:")) {
+            continue;
+          }
+          const rawPayload = line.slice(5).trim();
+          if (!rawPayload) {
+            continue;
+          }
+          if (applyPayload(rawPayload)) {
+            streamDone = true;
+            break;
+          }
+        }
+        if (streamDone) {
+          break;
+        }
+      }
+    }
+
+    if (pending.trim()) {
+      const lines = pending.split("\n");
+      for (const line of lines) {
+        if (!line.startsWith("data:")) {
+          continue;
+        }
+        const rawPayload = line.slice(5).trim();
+        if (!rawPayload) {
+          continue;
+        }
+        applyPayload(rawPayload);
+      }
+    }
+
+    flushTtsChunkBuffer();
+    if (!assistantText.trim()) {
+      assistantText = "ROK did not return any text this time.";
+    }
+
+    updateChatMessage(assistantBubble, assistantText, { streaming: false });
+    setAssistantResponse(fromVoice ? "ROK finished speaking." : "ROK replied.");
+    state.chatHistory.push(
+      { role: "user", content: trimmed },
+      { role: "assistant", content: assistantText }
+    );
+    state.chatHistory = state.chatHistory.slice(-24);
+  } catch (error) {
+    const errorMessage = error && error.message ? error.message : "ROK chat failed right now.";
+    updateChatMessage(assistantBubble, errorMessage, { streaming: false });
+    setAssistantResponse(errorMessage);
+  } finally {
+    state.chatInFlight = false;
+    if (elements.chatSendBtn) {
+      elements.chatSendBtn.disabled = false;
+      elements.chatSendBtn.textContent = "Send";
+    }
+    syncTtsButtons();
+  }
+}
+
+function appendChatMessage(role, text, options = {}) {
+  const article = document.createElement("article");
+  article.className = `chat-bubble ${role}`;
+  if (options.streaming) {
+    article.classList.add("streaming");
+  }
+
+  const roleLabel = document.createElement("span");
+  roleLabel.className = "chat-role";
+  roleLabel.textContent = role === "user" ? "You" : "ROK";
+
+  const body = document.createElement("p");
+  body.className = "chat-text";
+  body.textContent = text;
+
+  article.appendChild(roleLabel);
+  article.appendChild(body);
+  elements.chatMessages.appendChild(article);
+  elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+  return article;
+}
+
+function updateChatMessage(messageNode, text, options = {}) {
+  if (!messageNode) {
+    return;
+  }
+  const body = messageNode.querySelector(".chat-text");
+  if (body) {
+    body.textContent = text;
+  }
+  messageNode.classList.toggle("streaming", Boolean(options.streaming));
+  elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+}
+
+function extractTokenFromStreamPayload(payload) {
+  const raw = String(payload || "").trim();
+  if (!raw) {
+    return { token: "", done: false, assistant_content: "" };
+  }
+  if (raw === "[DONE]") {
+    return { token: "", done: true, assistant_content: "" };
+  }
+  if (raw[0] !== "{") {
+    return { token: raw, done: false, assistant_content: "" };
+  }
+
+  let parsed = null;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    return { token: raw, done: false, assistant_content: "" };
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    return { token: "", done: false, assistant_content: "" };
+  }
+
+  const done = Boolean(parsed.done);
+  const assistantContent = typeof parsed.assistant_content === "string" ? parsed.assistant_content : "";
+
+  for (const key of ["token", "response", "reply", "text", "message", "content"]) {
+    const value = parsed[key];
+    if (typeof value === "string") {
+      return { token: value, done, assistant_content: assistantContent };
+    }
+  }
+
+  if (parsed.message && typeof parsed.message === "object" && typeof parsed.message.content === "string") {
+    return { token: parsed.message.content, done, assistant_content: assistantContent };
+  }
+
+  if (Array.isArray(parsed.choices)) {
+    let joined = "";
+    let choiceDone = false;
+    for (const choice of parsed.choices) {
+      if (!choice || typeof choice !== "object") {
+        continue;
+      }
+      if (choice.finish_reason) {
+        choiceDone = true;
+      }
+      if (typeof choice.text === "string") {
+        joined += choice.text;
+        continue;
+      }
+      if (choice.delta && typeof choice.delta === "object" && typeof choice.delta.content === "string") {
+        joined += choice.delta.content;
+        continue;
+      }
+      if (choice.message && typeof choice.message === "object" && typeof choice.message.content === "string") {
+        joined += choice.message.content;
+      }
+    }
+    return { token: joined, done: done || choiceDone, assistant_content: assistantContent };
+  }
+
+  return { token: "", done, assistant_content: assistantContent };
 }
 
 function resolveApiBase() {

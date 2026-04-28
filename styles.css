@@ -268,6 +268,96 @@ button {
   margin-top: 12px;
 }
 
+.chat-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.chat-toggle-btn {
+  min-height: 46px;
+  border-radius: 16px;
+  padding: 12px 14px;
+}
+
+.chat-toggle-btn.is-active {
+  background: rgba(255, 77, 90, 0.14);
+  border-color: var(--line-strong);
+}
+
+.chat-messages {
+  display: grid;
+  gap: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 2px;
+  margin-bottom: 12px;
+}
+
+.chat-bubble {
+  border-radius: 20px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.chat-bubble.assistant {
+  background: var(--panel-strong);
+}
+
+.chat-bubble.user {
+  background: rgba(255, 77, 90, 0.12);
+  border-color: rgba(255, 121, 124, 0.16);
+}
+
+.chat-bubble.streaming {
+  border-color: rgba(255, 191, 114, 0.28);
+}
+
+.chat-role {
+  display: block;
+  margin-bottom: 8px;
+  color: #ffc1c6;
+  font-size: 0.74rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.chat-text {
+  margin: 0;
+  line-height: 1.52;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.chat-form label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.chat-input-row {
+  display: grid;
+  gap: 10px;
+}
+
+.chat-input-row textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(9, 1, 2, 0.68);
+  color: var(--text);
+  font: inherit;
+}
+
+.chat-input-row textarea::placeholder {
+  color: #b98c90;
+}
+
 .message-card,
 .status-pill,
 .summary-card,
@@ -540,7 +630,8 @@ button {
   }
 
   .action-row,
-  .input-row {
+  .input-row,
+  .chat-input-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

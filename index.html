@@ -97,6 +97,34 @@
         </div>
       </section>
 
+      <section class="panel chat-panel">
+        <div class="section-head">
+          <p class="eyebrow">Talk To ROK</p>
+          <h2>Have a conversation</h2>
+          <p class="section-copy">Type to ROK, or say "hey rok" and ask a normal question. Route commands still map directions.</p>
+        </div>
+
+        <div class="chat-toolbar">
+          <button id="ttsToggleBtn" class="secondary-btn chat-toggle-btn" type="button">Voice Replies On</button>
+          <button id="ttsStopBtn" class="secondary-btn chat-toggle-btn" type="button">Stop Voice</button>
+        </div>
+
+        <div id="chatMessages" class="chat-messages" aria-live="polite">
+          <article class="chat-bubble assistant">
+            <span class="chat-role">ROK</span>
+            <p class="chat-text">I can help with directions, road-trip questions, or general conversation. If voice replies are on, I will speak while I answer.</p>
+          </article>
+        </div>
+
+        <form id="chatForm" class="chat-form">
+          <label for="chatInput">Message ROK</label>
+          <div class="chat-input-row">
+            <textarea id="chatInput" rows="2" placeholder="Ask ROK anything..." autocomplete="off"></textarea>
+            <button id="chatSendBtn" class="route-btn" type="submit">Send</button>
+          </div>
+        </form>
+      </section>
+
       <section class="panel destination-panel">
         <div class="section-head">
           <p class="eyebrow">Destination</p>
