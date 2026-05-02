@@ -3,151 +3,129 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ROKGPS</title>
+  <title>ROKGPS | Jarvis Mode</title>
   <meta
     name="description"
-    content="ROKGPS is a voice-first navigation prototype that listens for 'hey rock' and maps the fastest route."
+    content="ROKGPS in Jarvis mode: speech-to-text in, ROK answers back, and the browser speaks the reply aloud."
   />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Orbitron:wght@500;700;800&display=swap"
     rel="stylesheet"
-  />
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-    crossorigin=""
   />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="map-app">
-    <div id="map" class="map-canvas" aria-label="Map showing the route"></div>
+  <div class="app-shell">
+    <div class="ambient-grid" aria-hidden="true"></div>
+    <div class="ambient-glow ambient-glow-left" aria-hidden="true"></div>
+    <div class="ambient-glow ambient-glow-right" aria-hidden="true"></div>
 
-    <main class="overlay-stack">
-      <aside class="floating-column">
-        <section class="panel-glass search-card" aria-label="Destination search">
-          <form id="destinationForm" class="search-form">
-            <div class="search-input-shell">
-              <span class="search-icon" aria-hidden="true"></span>
-              <input
-                id="destinationInput"
-                name="destination"
-                type="text"
-                autocomplete="off"
-                placeholder='Search a place or say "hey rock"...'
-              />
-            </div>
-            <button class="search-submit" type="submit">Route</button>
-          </form>
+    <header class="topbar panel">
+      <div>
+        <p class="eyebrow">ROKGPS // JARVIS MODE</p>
+        <h1>Voice console for ROK</h1>
+      </div>
 
-          <div class="quick-actions">
-            <button id="locateBtn" class="action-chip" type="button">My location</button>
-            <button id="ttsToggleBtn" class="action-chip" type="button">Voice Replies On</button>
-            <button id="ttsStopBtn" class="action-chip" type="button">Stop Voice</button>
-          </div>
+      <div class="status-pills" aria-live="polite">
+        <span id="voiceStatusPill" class="status-pill">Voice offline</span>
+        <span id="apiStatusPill" class="status-pill status-pill-soft">ROK idle</span>
+      </div>
+    </header>
 
-          <div class="preset-row" aria-label="Quick destinations">
-            <button class="preset-chip" type="button" data-destination="Times Square, New York City">Times Square</button>
-            <button class="preset-chip" type="button" data-destination="Grand Central Terminal, New York City">Grand Central</button>
-            <button class="preset-chip" type="button" data-destination="JFK Airport">JFK Airport</button>
-          </div>
-        </section>
-
-        <section class="panel-glass status-card" aria-live="polite">
-          <div class="status-topline">
-            <span id="listenerModeText" class="status-badge">OFF</span>
-            <span id="voiceModeBadge" class="status-badge status-badge-soft">Standby</span>
-          </div>
-
-          <p id="assistantResponse" class="assistant-copy">
-            Tap the R once, wait for the red glow, then say "hey rock" and your destination.
+    <main class="dashboard">
+      <section class="panel hero-panel">
+        <div class="hero-copy">
+          <p class="eyebrow">Speech to text -> ROK API -> text to speech</p>
+          <h2>Talk to ROK like Jarvis.</h2>
+          <p id="assistantSummary" class="assistant-summary">
+            Arm the microphone, say "hey rok", ask anything, and ROK will answer back out loud.
           </p>
-          <p id="liveTranscript" class="transcript-copy">
-            Live transcript will show here once the mic is armed.
-          </p>
-          <p id="listenerHint" class="status-hint">Wake word inactive</p>
-
-          <div class="status-meta">
-            <span id="originStatus">Waiting for origin</span>
-            <span id="destinationStatus">Waiting for destination</span>
-          </div>
-        </section>
-
-        <section class="assistant-cache" hidden aria-hidden="true">
-          <div id="chatMessages" class="chat-messages">
-            <article class="chat-bubble assistant">
-              <span class="chat-role">ROK</span>
-              <p class="chat-text">Voice chat is ready. Ask naturally after saying "hey rock".</p>
-            </article>
-          </div>
-
-          <form id="chatForm" class="chat-form">
-            <label for="chatInput">Message ROK</label>
-            <div class="chat-input-row">
-              <textarea id="chatInput" rows="2" placeholder="Ask ROK anything..." autocomplete="off"></textarea>
-              <button id="chatSendBtn" class="search-submit" type="submit">Send</button>
-            </div>
-          </form>
-        </section>
-      </aside>
-
-      <section class="panel-glass route-sheet" aria-label="Route directions">
-        <div class="sheet-handle" aria-hidden="true"></div>
-
-        <div class="sheet-head">
-          <div>
-            <p class="sheet-kicker">Fastest route</p>
-            <h1>Directions</h1>
-          </div>
-          <p class="sheet-copy">Tap the map anytime to pin a different start point.</p>
         </div>
 
-        <div class="map-summary">
-          <article class="summary-card">
-            <span>Trip</span>
-            <strong id="tripTimeValue">--</strong>
-          </article>
-          <article class="summary-card">
-            <span>Distance</span>
-            <strong id="tripDistanceValue">--</strong>
-          </article>
-          <article class="summary-card">
-            <span>ETA</span>
-            <strong id="etaValue">--</strong>
-          </article>
+        <div class="reactor-stage">
+          <button id="armVoiceBtn" class="reactor-button" type="button" aria-label='Arm voice listening for "hey rok"'>
+            <span class="reactor-orbit" aria-hidden="true"></span>
+            <span class="reactor-center">
+              <span class="reactor-mark">R</span>
+              <span id="armButtonText" class="reactor-label">Arm Voice</span>
+            </span>
+          </button>
         </div>
 
-        <ol id="routeSteps" class="steps-list">
-          <li class="empty-step">Your directions will show up here after you ask ROKGPS for a destination.</li>
-        </ol>
+        <div class="action-row">
+          <button id="speakReplyBtn" class="action-button action-button-primary" type="button">Voice replies on</button>
+          <button id="stopSpeechBtn" class="action-button" type="button">Stop voice</button>
+          <button id="clearChatBtn" class="action-button" type="button">Clear chat</button>
+        </div>
+
+        <form id="composerForm" class="composer" autocomplete="off">
+          <label for="messageInput">Ask ROK</label>
+          <div class="composer-row">
+            <input
+              id="messageInput"
+              name="message"
+              type="text"
+              placeholder='Type here or say "hey rok"...'
+            />
+            <button class="send-button" type="submit">Send</button>
+          </div>
+        </form>
       </section>
 
-      <div class="voice-dock">
-        <div id="listenerBanner" class="listener-pill" data-state="off">
-          <strong id="listenerHeadline">Mic is off</strong>
-          <p id="listenerSubtext">Tap the R once to arm "hey rock".</p>
+      <section class="panel telemetry-panel" aria-live="polite">
+        <div class="telemetry-grid">
+          <article class="metric-card">
+            <span>Mode</span>
+            <strong id="modeMetric">Standby</strong>
+          </article>
+          <article class="metric-card">
+            <span>Microphone</span>
+            <strong id="micMetric">Unknown</strong>
+          </article>
+          <article class="metric-card">
+            <span>Speech</span>
+            <strong id="speechMetric">Idle</strong>
+          </article>
         </div>
 
-        <button id="armVoiceBtn" class="rok-fab" type="button" aria-label='Arm wake listening for "hey rock"'>
-          <span class="rok-fab-core">R</span>
-        </button>
-      </div>
+        <div class="readout">
+          <span class="readout-label">Live transcript</span>
+          <p id="liveTranscript" class="readout-text">
+            The microphone is idle. Arm it to start speech-to-text.
+          </p>
+        </div>
 
-      <div class="sr-only-status" aria-hidden="true">
-        <span id="micStatus">Idle</span>
-        <span id="wakeStatus">Disarmed</span>
-      </div>
+        <div class="readout">
+          <span class="readout-label">Wake buffer</span>
+          <p id="queuedPrompt" class="readout-text">
+            Waiting for "hey rok" before sending anything to the API.
+          </p>
+        </div>
+      </section>
+
+      <section class="panel conversation-panel">
+        <div class="conversation-head">
+          <div>
+            <p class="eyebrow">Conversation feed</p>
+            <h2>ROK responses</h2>
+          </div>
+          <p class="conversation-copy">Every prompt is sent from JavaScript to the local proxy, then forwarded to the ROK API.</p>
+        </div>
+
+        <div id="chatLog" class="chat-log" aria-live="polite">
+          <article class="chat-message assistant">
+            <span class="chat-role">ROK</span>
+            <p class="chat-text">
+              Jarvis mode is online. Say "hey rok" and then your prompt, or type below to send a message directly.
+            </p>
+          </article>
+        </div>
+      </section>
     </main>
   </div>
 
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-    crossorigin=""
-  ></script>
   <script src="app.js"></script>
 </body>
 </html>
